@@ -44,6 +44,17 @@ function scan_dir($dir, &$list){
 	closedir($dh);
 }
 
+function to_real_path($path, $base){
+	if (empty($path)){
+		return NULL;
+	}
+	if ($path[0] != '/' && $path[0] != "\\" && $path[1] != ':'){
+		$path = $base . '/' . $path;
+	}
+	$path = str_replace("\\", "/", $path);
+	return file_exists($path) ? $path : NULL;
+}
+
 // 处理配置文件
 function parse_list($path, &$list){
 	if (!file_exists($path)) return;
@@ -51,16 +62,21 @@ function parse_list($path, &$list){
 	$cache = array();
 	$lines = file($path);
 	$base  = dirname($path);
+	$zone_file = NULL;
+
 	foreach ($lines as $line){
 		$line = explode("\t", trim($line));
 		$name = array_shift($line);
-		$path = array_pop($line);
-		if (empty($path) || empty($name) || !preg_match(FILE_PATTERN, $name, $ms)) continue;
-		if ($path[0] != '/' && $path[0] != "\\" && $path[1] != ':'){
-			$path = $base . '/' . $path;
+		if (empty($name)) continue;
+
+		if ($name[0] === '['){
+			$zone_file = to_real_path(substr($name, 1, -1), $base);
+			continue;
 		}
-		$path = str_replace("\\", "/", $path);
-		if (!file_exists($path)) continue;
+		$path = to_real_path(array_pop($line), $base);
+		if (!$path && $zone_file){ $path = $zone_file; }
+
+		if (empty($path) || !preg_match(FILE_PATTERN, $name, $ms)) continue;
 		if (!isset($cache[$path])){
 			$cache[$path] = getimagesize($path);
 		}
