@@ -9,11 +9,13 @@ define('LIST_NORMAL', 4);
 define('LIST_RIGHT', 5);
 define('LIST_BOTTOM', 6);
 define('LIST_AUTO', 7);
-define('FILE_PATTERN', '/^([rbgaz])((?:\.\d+){0,4})(\[[\.\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
+define('FILE_PATTERN', '/^([rbgadtz])((?:\.\d+){0,4})(\[[\.\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
 define('LIST_FILE', 'list.txt');
 
 // 扫描目录
+$cache = array();
 function scan_dir($dir, &$list){
+	global $cache;
 	$dh = opendir($dir);
 	while ($file = readdir($dh)){
 		if ($file == '.' || $file == '..') continue;
@@ -27,8 +29,10 @@ function scan_dir($dir, &$list){
 			}elseif ($pos !== false){
 				$file = substr($file, 0, $pos);
 			}
+
 			if (!preg_match(FILE_PATTERN, $file, $ms)) continue;
-			$info = getimagesize($path);
+			if ($ms[1] == 'd') continue; // 真实文件不允许占位类型
+			$info = $cache[$path] = getimagesize($path);
 			if (!$info) continue;
 			$list[] = array(
 				'width' => $info[IMG_WIDTH],
@@ -59,13 +63,15 @@ function to_real_path($path, $base){
 function parse_list($path, &$list){
 	if (!file_exists($path)) return;
 
-	$cache = array();
+	global $cache;
 	$lines = file($path);
 	$base  = dirname($path);
 	$zone_file = NULL;
+	$last  = NULL;
 
 	foreach ($lines as $line){
-		$line = explode("\t", trim($line));
+		// $line = explode("\t", trim($line));
+		$line = preg_split('/[ \t]+/', trim($line));
 		$name = array_shift($line);
 		if (empty($name)) continue;
 
@@ -77,13 +83,26 @@ function parse_list($path, &$list){
 		if (!$path && $zone_file){ $path = $zone_file; }
 
 		if (empty($path) || !preg_match(FILE_PATTERN, $name, $ms)) continue;
+		if ($last){
+			$copy = $last;
+			switch ($ms[1]) {
+				case 't':
+					$copy['type'] = 'transparent';
+				case 'd':
+					if (isset($ms[4])) $copy['name'][4] = $ms[4];
+					if (isset($ms[5])) $copy['name'][5] = $ms[5];
+					$copy['path'] = $path;
+					$list[] = $copy;
+				continue 2;
+			}
+		}
 		if (!isset($cache[$path])){
 			$cache[$path] = getimagesize($path);
 		}
 		$info = $cache[$path];
 		if (!$info) continue;
 
-		$list[] = array(
+		$list[] = $last = array(
 			'width' => $info[IMG_WIDTH],
 			'height' => $info[IMG_HEIGHT],
 			'top' => 0,
@@ -97,6 +116,8 @@ function parse_list($path, &$list){
 
 // 合并文件方法
 function merge_image($im, $info){
+	if ($info['type'] == 'transparent') return;
+
 	static $last_path=false, $src=false;
 	if ($src && $last_path != $info['path']){
 		imagedestroy($src);
@@ -141,6 +162,7 @@ function gen_css($info, $opt = NULL){
 	}elseif ($info === 'result'){
 		return $enable ? $code : '';
 	}elseif ($enable){
+		if ($info['type'] == 'transparent') return; // 透明不生成样式
 		$name = $id;
 		if (isset($info['note']) && preg_match('/^[a-z0-9\-_]+$/i', $info['note'])){
 			$name = $info['note'];
@@ -179,6 +201,10 @@ g.<col>.<row>.<gridSize>[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
 a.<X>.<Y>[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
 自动排列
 z[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
+复制上一个定义
+d(prefix){name}
+复制空项目
+t(prefix)
 **/
 function run(){
 	// 默认参数
