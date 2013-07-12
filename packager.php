@@ -9,8 +9,9 @@ define('LIST_NORMAL', 4);
 define('LIST_RIGHT', 5);
 define('LIST_BOTTOM', 6);
 define('LIST_AUTO', 7);
-define('FILE_PATTERN', '/^([rbgadtz])((?:\.\d+){0,4})(\[[\.\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
+define('FILE_PATTERN', '/^([rbgadtz])((?:,\d+){0,4})(\[[,\-\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
 define('LIST_FILE', 'list.txt');
+define('FAKE_FILE', '#null');
 
 // 扫描目录
 $cache = array();
@@ -49,13 +50,13 @@ function scan_dir($dir, &$list){
 }
 
 function to_real_path($path, $base){
-	if (empty($path)){
-		return NULL;
-	}
+	if (empty($path)){ return NULL; }
+	if ($path == FAKE_FILE) return $path;
+
 	if ($path[0] != '/' && $path[0] != "\\" && $path[1] != ':'){
 		$path = $base . '/' . $path;
 	}
-	$path = str_replace("\\", "/", $path);
+	$path = str_replace("\\", "/", realpath($path));
 	return file_exists($path) ? $path : NULL;
 }
 
@@ -68,9 +69,7 @@ function parse_list($path, &$list){
 	$base  = dirname($path);
 	$zone_file = NULL;
 	$last  = NULL;
-
 	foreach ($lines as $line){
-		// $line = explode("\t", trim($line));
 		$line = preg_split('/[ \t]+/', trim($line));
 		$name = array_shift($line);
 		if (empty($name)) continue;
@@ -87,7 +86,7 @@ function parse_list($path, &$list){
 			$copy = $last;
 			switch ($ms[1]) {
 				case 't':
-					$copy['type'] = 'transparent';
+					$copy['type'] = FAKE_FILE;
 				case 'd':
 					if (isset($ms[4])) $copy['name'][4] = $ms[4];
 					if (isset($ms[5])) $copy['name'][5] = $ms[5];
@@ -96,11 +95,20 @@ function parse_list($path, &$list){
 				continue 2;
 			}
 		}
-		if (!isset($cache[$path])){
-			$cache[$path] = getimagesize($path);
+
+		if ($path == FAKE_FILE){
+			$info = array(
+				IMG_WIDTH => 0,
+				IMG_HEIGHT => 0,
+				IMG_TYPE => FAKE_FILE
+			);
+		}else {
+			if (!isset($cache[$path])){
+				$cache[$path] = getimagesize($path);
+			}
+			$info = $cache[$path];
+			if (!$info) continue;
 		}
-		$info = $cache[$path];
-		if (!$info) continue;
 
 		$list[] = $last = array(
 			'width' => $info[IMG_WIDTH],
@@ -116,7 +124,7 @@ function parse_list($path, &$list){
 
 // 合并文件方法
 function merge_image($im, $info){
-	if ($info['type'] == 'transparent') return;
+	if ($info['type'] == FAKE_FILE) return;
 
 	static $last_path=false, $src=false;
 	if ($src && $last_path != $info['path']){
@@ -142,13 +150,24 @@ function merge_image($im, $info){
 		}
 		if (!$src) return false;
 	}
-
-	imagecopy($im, $src, $info['dx'], $info['dy'], $info['left'], $info['top'], $info['width'], $info['height']);
+	$left = $info['left'];
+	if ($left < 0){
+		$info['dx'] -= $left;
+		$info['width'] += $left;
+		$left = 0;
+	}
+	$top  = $info['top'];
+	if ($top < 0){
+		$info['dy'] -= $top;
+		$info['height'] += $top;
+		$top = 0;
+	}
+	imagecopy($im, $src, $info['dx'], $info['dy'], $left, $top, $info['width'], $info['height']);
 }
 
 // 生成CSS代码
 function gen_css($info, $opt = NULL){
-	static $code='', $enable=false, $prefix, $size, $id, $less;
+	static $code='', $enable=false, $prefix, $size, $id, $less, $url;
 	if ($info === 'init'){
 		$enable = !!$opt['output'];
 		if ($enable){
@@ -164,20 +183,28 @@ function gen_css($info, $opt = NULL){
 			$size = $opt['size'];
 			$less = (strtolower(substr($opt['output'], -5)) == '.less') ? '()':'';
 			$name = str_repeat('../', count($out)-1) . implode('/', $img);
+			$url = $opt['url'] ? $name : false;
 			$code = "\n/* Image: {$name} */";
-			$code .= "\n.{$prefix}{$less} {background-image:url('{$name}');}";
+			if (!$url){
+				$code .= "\n.{$prefix}{$less} {background-image:url('{$name}'); background-repeat: no-repeat;}";
+			}
 		}
 	}elseif ($info === 'result'){
 		return $enable ? $code : '';
 	}elseif ($enable){
 		$id++;
-		if ($info['type'] == 'transparent') return; // 透明不生成样式
+		if ($info['type'] == FAKE_FILE) return; // 透明不生成样式
 		if (isset($info['note']) && preg_match('/^[a-z0-9\-_]+$/i', $info['note'])){
 			$name = $info['note'];
 		}else {
 			$name = $id;
 		}
-		$code .= "\n.{$prefix}-{$name}{$less} {background-position:";
+		$code .= "\n.{$prefix}-{$name}{$less} {";
+		if ($url){
+			$code .= "background:url('{$url}') no-repeat ";
+		}else {
+			$code .= "background-position:";
+		}
 		$x = $info['dx'] > 0 ? "-{$info['dx']}px" : 0;
 		$y = $info['dy'] > 0 ? "-{$info['dy']}px" : 0;
 		switch ($info['mode']){
@@ -201,15 +228,15 @@ function gen_css($info, $opt = NULL){
 /**
 File Name Format:
 靠右定位
-r.<top>.<paddingLeft>.<paddingRight>[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
+r,<top>,<paddingLeft>,<paddingRight>[<cropWidth>,<cropHeight>,<cropX>,<cropY>](prefix){name}
 靠底定位
-b.<left>.<paddingTop>.<paddingBottom>[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
+b,<left>,<paddingTop>,<paddingBottom>[<cropWidth>,<cropHeight>,<cropX>,<cropY>](prefix){name}
 栅格定位
-g.<col>.<row>.<gridSize>[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
+g,<col>,<row>,<gridSize>[<cropWidth>,<cropHeight>,<cropX>,<cropY>](prefix){name}
 绝对坐标定位
-a.<X>.<Y>[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
+a,<X>,<Y>[<cropWidth>,<cropHeight>,<cropX>,<cropY>](prefix){name}
 自动排列
-z[<cropWidth>.<cropHeight>.<cropX>.<cropY>](prefix){name}
+z[<cropWidth>,<cropHeight>,<cropX>,<cropY>](prefix){name}
 复制上一个定义
 d(prefix){name}
 复制空项目
@@ -223,6 +250,7 @@ function run(){
 	$CSS_CLASS = 'icon'; // CSS类前续
 	$CSS_FILE  = ''; // CSS导出文件地址
 	$CSS_SIZE  = true; // 导出图片的块大小CSS属性
+	$CSS_URL   = true; // 导出CSS包含URL地址
 	$GRID_PAD  = 0; // 自动排列时图片间隔
 	$GRID_BLK  = 0; // 自动排列最少块高宽
 	$LIST_FILE = LIST_FILE;
@@ -258,6 +286,9 @@ function run(){
 			case 'CS':
 				$CSS_SIZE = ($param[1] == '1');
 				break;
+			case 'CU':
+				$CSS_URL = ($param[1] == '1');
+				break;
 			case 'LF':
 				$LIST_FILE = str_replace("\\", "/", $param[1]);
 				break;
@@ -289,6 +320,7 @@ function run(){
 		echo 'CSS FILE   : '.$CSS_FILE."\n";
 		echo 'CSS PREFIX : '.$CSS_CLASS."\n";
 		echo 'CSS SIZE   : '.($CSS_SIZE ? 'include' : 'not include')."\n";
+		echo 'CSS URL    : '.($CSS_URL ? 'include' : 'not include')."\n";
 	}
 	echo "==========================================\n";
 
@@ -334,12 +366,12 @@ function run(){
 
 		// 切割参数
 		if (!empty($ms[3])){
-			$crop = explode('.', substr($ms[3],1,-1)); // w.h.l.t
+			$crop = explode(',', substr($ms[3],1,-1)); // w.h.l.t
 			switch (count($crop)) {
 				case 4:
-					$img['top'] = max(0, intval($crop[3]));
+					$img['top'] = intval($crop[3]);
 				case 3:
-					$img['left'] = max(0, intval($crop[2]));
+					$img['left'] = intval($crop[2]);
 				case 2:
 					$img['height'] = max(0, intval($crop[1]));
 				case 1:
@@ -347,8 +379,9 @@ function run(){
 			}
 		}
 
-		$pos = explode('.', $ms[2]);
+		$pos = explode(',', $ms[2]);
 		$out = &$outs[$cat];
+		$oh = $ow = $or = $ob = 0;
 		switch ($mode) {
 			case 'r':
 				// y.padLeft.padRight
@@ -358,8 +391,8 @@ function run(){
 					$dx += intval($pos[3]);
 				}
 				$pad = isset($pos[2]) ? intval($pos[2]) : 0;
-				$out[IMG_RIGHT] = max($out[IMG_RIGHT], $dx + $pad);
-				$out[IMG_HEIGHT] = max($out[IMG_HEIGHT], $dy + $img['height']);
+				$or = $dx + $pad;
+				$oh = $dy + $img['height'];
 				$out[LIST_RIGHT][] = &$img;
 			break;
 
@@ -371,8 +404,8 @@ function run(){
 					$dy += intval($pos[3]);
 				}
 				$pad = isset($pos[2]) ? intval($pos[2]) : 0;
-				$out[IMG_BOTTOM] = max($out[IMG_BOTTOM], $dy + $pad);
-				$out[IMG_WIDTH] = max($out[IMG_WIDTH], $dx + $img['width']);
+				$ob = $dy + $pad;
+				$ow = $dx + $img['width'];
 				$out[LIST_BOTTOM][] = &$img;
 			break;
 
@@ -389,11 +422,15 @@ function run(){
 					$dx *= $size;
 					$dy *= $size;
 				}
-				$out[IMG_WIDTH] = max($out[IMG_WIDTH], $dx + $img['width']);
-				$out[IMG_HEIGHT] = max($out[IMG_HEIGHT], $dy + $img['height']);
+				$ow = $dx + $img['width'];
+				$oh = $dy + $img['height'];
 				$out[LIST_NORMAL][] = &$img;
 			break;
 		}
+		if ($or > $out[IMG_RIGHT]) $out[IMG_RIGHT] = $or;
+		if ($ob > $out[IMG_BOTTOM]) $out[IMG_BOTTOM] = $ob;
+		if ($ow > $out[IMG_WIDTH]) $out[IMG_WIDTH] = $ow;
+		if ($oh > $out[IMG_HEIGHT]) $out[IMG_HEIGHT] = $oh;
 		$out['cat'] = $cat;
 		$img['dx'] = $dx;
 		$img['dy'] = $dy;
@@ -474,6 +511,7 @@ function run(){
 		$prefix = ($cat == '' ? $CSS_CLASS : $CSS_CLASS.'-'.$cat);
 		$opt = array(
 			'prefix' => $prefix,
+			'url' => $CSS_URL,
 			'size' => $CSS_SIZE,
 			'path' => $path,
 			'output' => $CSS_FILE
