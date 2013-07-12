@@ -113,6 +113,8 @@ function parse_list($path, &$list){
 		$list[] = $last = array(
 			'width' => $info[IMG_WIDTH],
 			'height' => $info[IMG_HEIGHT],
+			'_w' => $info[IMG_WIDTH],
+			'_h'=> $info[IMG_HEIGHT],
 			'top' => 0,
 			'left' => 0,
 			'type' => $info[IMG_TYPE],
@@ -162,6 +164,9 @@ function merge_image($im, $info){
 		$info['height'] += $top;
 		$top = 0;
 	}
+	$info['width'] = min($info['width'], $info['_w'] - $left);
+	$info['height'] = min($info['height'], $info['_h'] - $top);
+
 	imagecopy($im, $src, $info['dx'], $info['dy'], $left, $top, $info['width'], $info['height']);
 }
 
