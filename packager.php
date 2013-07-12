@@ -148,26 +148,36 @@ function merge_image($im, $info){
 
 // 生成CSS代码
 function gen_css($info, $opt = NULL){
-	static $code='', $enable=false, $prefix, $size, $id;
+	static $code='', $enable=false, $prefix, $size, $id, $less;
 	if ($info === 'init'){
-		$enable = !$opt['disable'];
+		$enable = !!$opt['output'];
 		if ($enable){
+			$out = explode(DIRECTORY_SEPARATOR, realpath($opt['output']));
+			$img = explode(DIRECTORY_SEPARATOR, realpath($opt['path']));
+			while ($out[0] == $img[0]){
+				array_shift($out);
+				array_shift($img);
+			}
+
 			$id = 0;
 			$prefix = $opt['prefix'];
 			$size = $opt['size'];
-			$name = basename($opt['path']);
+			$less = (strtolower(substr($opt['output'], -5)) == '.less') ? '()':'';
+			$name = str_repeat('../', count($out)-1) . implode('/', $img);
 			$code = "\n/* Image: {$name} */";
-			$code .= "\n.{$prefix} {background-image:url('{$name}')}";
+			$code .= "\n.{$prefix}{$less} {background-image:url('{$name}');}";
 		}
 	}elseif ($info === 'result'){
 		return $enable ? $code : '';
 	}elseif ($enable){
+		$id++;
 		if ($info['type'] == 'transparent') return; // 透明不生成样式
-		$name = $id;
 		if (isset($info['note']) && preg_match('/^[a-z0-9\-_]+$/i', $info['note'])){
 			$name = $info['note'];
+		}else {
+			$name = $id;
 		}
-		$code .= "\n.{$prefix}-{$name} {background-position:";
+		$code .= "\n.{$prefix}-{$name}{$less} {background-position:";
 		$x = $info['dx'] > 0 ? "-{$info['dx']}px" : 0;
 		$y = $info['dy'] > 0 ? "-{$info['dy']}px" : 0;
 		switch ($info['mode']){
@@ -185,7 +195,6 @@ function gen_css($info, $opt = NULL){
 			$code .= " width:{$info['width']}px; height:{$info['height']}px;";
 		}
 		$code .= '}';
-		$id++;
 	}
 }
 
@@ -467,7 +476,7 @@ function run(){
 			'prefix' => $prefix,
 			'size' => $CSS_SIZE,
 			'path' => $path,
-			'disable' => !$CSS_FILE
+			'output' => $CSS_FILE
 		);
 		gen_css('init', $opt);
 
