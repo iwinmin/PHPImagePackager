@@ -12,6 +12,7 @@ define('LIST_AUTO', 7);
 define('FILE_PATTERN', '/^([rbgadtz])((?:,\d+){0,4})(\[[,\-\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
 define('LIST_FILE', 'list.txt');
 define('FAKE_FILE', '@null');
+define('CWD', str_replace("\\", "/", getcwd()).'/');
 
 // 扫描目录
 $cache = array();
@@ -20,7 +21,7 @@ function scan_dir($dir, &$list){
 	$dh = opendir($dir);
 	while ($file = readdir($dh)){
 		if ($file == '.' || $file == '..') continue;
-		$path = $dir . '/' . $file;
+		$path = realpath($dir . '/' . $file);
 		if (is_dir($path)){
 			scan_dir($path, $list);
 		}else {
@@ -56,8 +57,12 @@ function to_real_path($path, $base){
 	if ($path[0] != '/' && $path[0] != "\\" && $path[1] != ':'){
 		$path = $base . '/' . $path;
 	}
-	$path = str_replace("\\", "/", realpath($path));
-	return file_exists($path) ? $path : NULL;
+	$path = realpath($path);
+	if ($path){
+		return str_replace("\\", "/", $path);
+	}else {
+		return NULL;
+	}
 }
 
 // 处理配置文件
@@ -185,14 +190,37 @@ function merge_image($im, $info){
 	imagecopy($im, $src, $info['dx'], $info['dy'], $left, $top, $info['width'], $info['height']);
 }
 
+function parse_path($path){
+	$path = str_replace("\\", "/", $path);
+	if ($path[0] != '/' && $path[1] != ':'){
+		$path = CWD . $path;
+	}
+	$paths = explode('/', $path);
+	$out = array();
+	foreach ($paths as $path){
+		switch ($path) {
+			case '..':
+				array_pop($out);
+			case '.':
+			case '':
+				break;
+
+			default:
+				$out[] = $path;
+				break;
+		}
+	}
+	return $out;
+}
+
 // 生成CSS代码
 function gen_css($info, $opt = NULL){
 	static $code='', $enable=false, $prefix, $size, $id, $less, $url;
 	if ($info === 'init'){
 		$enable = !!$opt['output'];
 		if ($enable){
-			$out = explode(DIRECTORY_SEPARATOR, realpath($opt['output']));
-			$img = explode(DIRECTORY_SEPARATOR, realpath($opt['path']));
+			$out = parse_path($opt['output']);
+			$img = parse_path($opt['path']);
 			while ($out[0] == $img[0]){
 				array_shift($out);
 				array_shift($img);
