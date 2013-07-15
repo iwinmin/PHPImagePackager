@@ -11,7 +11,7 @@ define('LIST_BOTTOM', 6);
 define('LIST_AUTO', 7);
 define('FILE_PATTERN', '/^([rbgadtz])((?:,\d+){0,4})(\[[,\-\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
 define('LIST_FILE', 'list.txt');
-define('FAKE_FILE', '#null');
+define('FAKE_FILE', '@null');
 
 // 扫描目录
 $cache = array();
@@ -72,13 +72,28 @@ function parse_list($path, &$list){
 	foreach ($lines as $line){
 		$line = preg_split('/[ \t]+/', trim($line));
 		$name = array_shift($line);
-		if (empty($name)) continue;
+		if (empty($name) || $name[0] === '#') continue;
 
 		if ($name[0] === '['){
 			$zone_file = to_real_path(substr($name, 1, -1), $base);
 			continue;
 		}
-		$path = to_real_path(array_pop($line), $base);
+		while (1){
+			$path = array_shift($line);
+			switch ($path[0]) {
+				case '[':
+				case '(':
+				case '{':
+					$name .= $path;
+				break;
+				case '#':
+					$path = $zone_file;
+				break 2;
+				default:
+					$path = to_real_path($path, $base);
+				break 2;
+			}
+		}
 		if (!$path && $zone_file){ $path = $zone_file; }
 
 		if (empty($path) || !preg_match(FILE_PATTERN, $name, $ms)) continue;
