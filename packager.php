@@ -9,6 +9,8 @@ define('LIST_NORMAL', 4);
 define('LIST_RIGHT', 5);
 define('LIST_BOTTOM', 6);
 define('LIST_AUTO', 7);
+define('IMG_TOP', 8);
+define('IMG_LEFT', 9);
 define('FILE_PATTERN', '/^([rbgadtz])((?:,\d+){0,4})(\[[,\-\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
 define('LIST_FILE', 'list.txt');
 define('FAKE_FILE', '@null');
@@ -95,7 +97,10 @@ function parse_list($path, &$list){
 					$path = $zone_file;
 				break 2;
 				default:
-					$path = to_real_path($path, $base);
+					if ($path){
+						$path = to_real_path($path, $base);
+						if (!$path) continue 3;
+					}
 				break 2;
 			}
 		}
@@ -380,7 +385,7 @@ function run(){
 	parse_list($SOURCE . '/' . $LIST_FILE, $list);
 
 	// 计算图片位置和输出图片大小
-	$empty = array(0, 0, 0, 0, array(), array(), array(), array());
+	$empty = array(0, 0, 0, 0, array(), array(), array(), array(), 0, 0);
 	// 默认无后续名记录
 	$outs = array('' => $empty);
 
@@ -429,31 +434,37 @@ function run(){
 
 		$pos = explode(',', $ms[2]);
 		$out = &$outs[$cat];
-		$oh = $ow = $or = $ob = 0;
+		$oh = $ow = $or = $ob = $rt = $bl = 0;
 		switch ($mode) {
 			case 'r':
 				// y.padLeft.padRight
 				$dx = $img['width'];
-				$dy = intval($pos[1]);
+				$dy = isset($pos[1]) ? intval($pos[1]) : -1;
+				if ($dy == -1){
+					$dy = $out[IMG_TOP];
+				}
 				if (isset($pos[3])){
 					$dx += intval($pos[3]);
 				}
 				$pad = isset($pos[2]) ? intval($pos[2]) : 0;
 				$or = $dx + $pad;
-				$oh = $dy + $img['height'];
+				$rt = $dy + $img['height'];
 				$out[LIST_RIGHT][] = &$img;
 			break;
 
 			case 'b':
 				// y.padTop.padBottom
-				$dx = intval($pos[1]);
+				$dx = isset($pos[1]) ? intval($pos[1]) : -1;
 				$dy = $img['height'];
+				if ($dx == -1){
+					$dx = $out[IMG_LEFT];
+				}
 				if (isset($pos[3])){
 					$dy += intval($pos[3]);
 				}
 				$pad = isset($pos[2]) ? intval($pos[2]) : 0;
 				$ob = $dy + $pad;
-				$ow = $dx + $img['width'];
+				$bl = $dx + $img['width'];
 				$out[LIST_BOTTOM][] = &$img;
 			break;
 
@@ -479,6 +490,8 @@ function run(){
 		if ($ob > $out[IMG_BOTTOM]) $out[IMG_BOTTOM] = $ob;
 		if ($ow > $out[IMG_WIDTH]) $out[IMG_WIDTH] = $ow;
 		if ($oh > $out[IMG_HEIGHT]) $out[IMG_HEIGHT] = $oh;
+		if ($rt > $out[IMG_TOP]) $out[IMG_TOP] = $rt;
+		if ($bl > $out[IMG_LEFT]) $out[IMG_LEFT] = $bl;
 		$out['cat'] = $cat;
 		$img['dx'] = $dx;
 		$img['dy'] = $dy;
