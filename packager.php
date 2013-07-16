@@ -247,7 +247,7 @@ function gen_css($info, $opt = NULL){
 	}elseif ($enable){
 		$id++;
 		if ($info['type'] == FAKE_FILE) return; // 透明不生成样式
-		if (isset($info['note']) && preg_match('/^[a-z0-9\-_]+$/i', $info['note'])){
+		if (!empty($info['note']) && preg_match('/^[a-z0-9\-_]+$/i', $info['note'])){
 			$name = $info['note'];
 		}else {
 			$name = $id;
@@ -260,19 +260,14 @@ function gen_css($info, $opt = NULL){
 		}
 		$x = $info['dx'] > 0 ? "-{$info['dx']}px" : 0;
 		$y = $info['dy'] > 0 ? "-{$info['dy']}px" : 0;
-		switch ($info['mode']){
-			case 'r':
-				$code .= "right {$x};";
-				break;
-			case 'b':
-				$code .= "{$y} bottom;";
-				break;
-			default:
-				$code .= "{$y} {$x};";
-				break;
-		}
+		$code .= "{$x} {$y};";
 		if ($size){
-			$code .= " width:{$info['width']}px; height:{$info['height']}px;";
+			if (strpos($info['css'], 'w') === false){
+				$code .= " width:{$info['width']}px;";
+			}
+			if (strpos($info['css'], 'h') === false){
+				$code .= " height:{$info['height']}px;";
+			}
 		}
 		$code .= '}';
 	}
@@ -404,7 +399,11 @@ function run(){
 
 		// 过滤备注信息
 		if (!empty($ms[5])){
-			$img['note'] = substr($ms[5], 1, -1);
+			$crop = explode('!', substr($ms[5], 1, -1));
+			$img['note'] = $crop[0];
+			$img['css'] = isset($crop[1]) ? $crop[1] : '';
+		}else {
+			$img['note'] = $img['css'] = '';
 		}
 
 		// 状态后续名
@@ -550,7 +549,7 @@ function run(){
 		unset($out);
 	}
 
-	$css = "/*** \n * Background Image CSS auto generate by PHP Image Packager";
+	$css = "/***\n * Background Image CSS auto generate by PHP Image Packager";
 	$css .= "\n * http://blog.win-ing.cn by Katana\n ***/";
 	// 生成文件
 	foreach ($outs as $cat => &$out) {
@@ -584,13 +583,13 @@ function run(){
 			merge_image($im, $img);
 		}
 		foreach ($out[LIST_RIGHT] as $img) {
-			gen_css($img);
 			$img['dx'] = $width - $img['dx'];
+			gen_css($img);
 			merge_image($im, $img);
 		}
 		foreach ($out[LIST_BOTTOM] as $img) {
-			gen_css($img);
 			$img['dy'] = $height - $img['dy'];
+			gen_css($img);
 			merge_image($im, $img);
 		}
 		foreach ($out[LIST_AUTO] as $img) {
