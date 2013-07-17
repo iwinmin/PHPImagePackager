@@ -238,9 +238,7 @@ function gen_css($info, $opt = NULL){
 			$name = str_repeat('../', count($out)-1) . implode('/', $img);
 			$url = $opt['url'] ? $name : false;
 			$code = "\n/* Image: {$name} */";
-			if (!$url){
-				$code .= "\n.{$prefix}{$less} {background-image:url('{$name}'); background-repeat: no-repeat;}";
-			}
+			$code .= "\n.{$prefix}{$less} {background-image:url(\"{$name}\"); background-repeat: no-repeat;}";
 		}
 	}elseif ($info === 'result'){
 		return $enable ? $code : '';
@@ -254,7 +252,7 @@ function gen_css($info, $opt = NULL){
 		}
 		$code .= "\n.{$prefix}-{$name}{$less} {";
 		if ($url){
-			$code .= "background:url('{$url}') no-repeat ";
+			$code .= "background:url(\"{$url}\") no-repeat ";
 		}else {
 			$code .= "background-position:";
 		}
@@ -271,6 +269,72 @@ function gen_css($info, $opt = NULL){
 		}
 		$code .= '}';
 	}
+}
+
+// 计算自动排列位置
+function calculate_auto(&$out, $GRID_PAD, $GRID_BLK){
+	if (count($out[LIST_AUTO]) == 0) return;
+	$m = 'h';
+	$w = $out[IMG_WIDTH];
+	$h = $y = $out[IMG_HEIGHT];
+	$x = 0;
+	foreach ($out[LIST_AUTO] as &$img) {
+		if (!$m){
+			if ($w >= $h){
+				$m = 'h';
+				$x = 0;
+				$y = $h + $GRID_PAD;
+			}else {
+				$m = 'v';
+				$y = 0;
+				$x = $w + $GRID_PAD;
+			}
+		}
+		$img['dx'] = $x;
+		$img['dy'] = $y;
+		$bw = $img['width'];
+		$bh = $img['height'];
+		if ($GRID_BLK){
+			if ($bw < $GRID_BLK) $bw = $GRID_BLK;
+			if ($bh < $GRID_BLK) $bh = $GRID_BLK;
+		}
+		if ($m == 'h'){
+			$x += $bw + $GRID_PAD;
+			$h = max($h, $y + $bh);
+		}else {
+			$y += $bh + $GRID_PAD;
+			$w = max($w, $x + $bw);
+		}
+		if ($m == 'h'){
+			if ($x >= $w){
+				$m = false;
+				$w = $x - $GRID_PAD;
+			}
+		}else{
+			if ($y >= $h){
+				$m = false;
+				$h = $y - $GRID_PAD;
+			}
+		}
+		unset($img);
+	}
+	$out[IMG_WIDTH] = max($out[IMG_WIDTH], $w, $x-$GRID_PAD);
+	$out[IMG_HEIGHT] = max($out[IMG_HEIGHT], $h, $y-$GRID_PAD);
+}
+
+function sync_pos(&$img){
+	static $base_pos = array();
+	$def_cat = empty($img['cat']);
+	if (empty($img['note'])) return $def_cat;
+
+	if ($def_cat){
+		$base_pos[$img['note']] = array($img['dx'], $img['dy']);
+	}elseif (isset($base_pos[$img['note']])){
+		list($img['dx'], $img['dy']) = $base_pos[$img['note']];
+	}else{
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -299,6 +363,7 @@ function run(){
 	$CSS_FILE  = ''; // CSS导出文件地址
 	$CSS_SIZE  = true; // 导出图片的块大小CSS属性
 	$CSS_URL   = true; // 导出CSS包含URL地址
+	$SAME_POS  = false; // 相同名称的图片位置对应
 	$GRID_PAD  = 0; // 自动排列时图片间隔
 	$GRID_BLK  = 0; // 自动排列最少块高宽
 	$LIST_FILE = LIST_FILE;
@@ -337,6 +402,9 @@ function run(){
 			case 'CU':
 				$CSS_URL = ($param[1] == '1');
 				break;
+			case 'SP':
+				$SAME_POS = ($param[1] == '1');
+				break;
 			case 'LF':
 				$LIST_FILE = str_replace("\\", "/", $param[1]);
 				break;
@@ -363,13 +431,14 @@ function run(){
 	// 输出参数状态
 	echo 'SOURCE DIR : '.$SOURCE."\n";
 	echo 'OUTPUT FILE: '.$OUTPUT."\n";
-	echo 'GRID SIZE  : '.$GRID_SIZE."\n";
 	if ($CSS_FILE){
 		echo 'CSS FILE   : '.$CSS_FILE."\n";
 		echo 'CSS PREFIX : '.$CSS_CLASS."\n";
-		echo 'CSS SIZE   : '.($CSS_SIZE ? 'include' : 'not include')."\n";
-		echo 'CSS URL    : '.($CSS_URL ? 'include' : 'not include')."\n";
+		echo 'CSS SIZE   : '.($CSS_SIZE ? 'yes' : 'no')."\n";
+		echo 'CSS URL    : '.($CSS_URL ? 'yes' : 'no')."\n";
 	}
+	echo 'SAME POS   : '.($SAME_POS ? 'yes' : 'no')."\n";
+	echo 'GRID SIZE  : '.$GRID_SIZE."\n";
 	echo "==========================================\n";
 
 	// 遍历文件
@@ -491,70 +560,33 @@ function run(){
 		if ($oh > $out[IMG_HEIGHT]) $out[IMG_HEIGHT] = $oh;
 		if ($rt > $out[IMG_TOP]) $out[IMG_TOP] = $rt;
 		if ($bl > $out[IMG_LEFT]) $out[IMG_LEFT] = $bl;
-		$out['cat'] = $cat;
+		$img['cat'] = $out['cat'] = $cat;
 		$img['dx'] = $dx;
 		$img['dy'] = $dy;
 		unset($img, $out);
 	}
 
 	// 处理自动布局部分列表
-	foreach ($outs as &$out) {
-		if (count($out[LIST_AUTO]) == 0) continue;
-		$m = 'h';
-		$w = $out[IMG_WIDTH];
-		$h = $y = $out[IMG_HEIGHT];
-		$x = 0;
-		foreach ($out[LIST_AUTO] as &$img) {
-			if (!$m){
-				if ($w >= $h){
-					$m = 'h';
-					$x = 0;
-					$y = $h + $GRID_PAD;
-				}else {
-					$m = 'v';
-					$y = 0;
-					$x = $w + $GRID_PAD;
-				}
-			}
-			$img['dx'] = $x;
-			$img['dy'] = $y;
-			$bw = $img['width'];
-			$bh = $img['height'];
-			if ($GRID_BLK){
-				if ($bw < $GRID_BLK) $bw = $GRID_BLK;
-				if ($bh < $GRID_BLK) $bh = $GRID_BLK;
-			}
-			if ($m == 'h'){
-				$x += $bw + $GRID_PAD;
-				$h = max($h, $y + $bh);
-			}else {
-				$y += $bh + $GRID_PAD;
-				$w = max($w, $x + $bw);
-			}
-			if ($m == 'h'){
-				if ($x >= $w){
-					$m = false;
-					$w = $x - $GRID_PAD;
-				}
-			}else{
-				if ($y >= $h){
-					$m = false;
-					$h = $y - $GRID_PAD;
-				}
-			}
-			unset($img);
+	if ($SAME_POS){
+		$out = &$outs[''];
+		calculate_auto($out, $GRID_PAD, $GRID_BLK);
+		$width = $out[IMG_WIDTH] + $out[IMG_RIGHT];
+		$height = $out[IMG_HEIGHT] + $out[IMG_BOTTOM];
+	}else {
+		foreach ($outs as &$out){
+			calculate_auto($out, $GRID_PAD, $GRID_BLK);
+			unset($out);
 		}
-		$out[IMG_WIDTH] = max($out[IMG_WIDTH], $w, $x-$GRID_PAD);
-		$out[IMG_HEIGHT] = max($out[IMG_HEIGHT], $h, $y-$GRID_PAD);
-		unset($out);
 	}
 
 	$css = "/***\n * Background Image CSS auto generate by PHP Image Packager";
 	$css .= "\n * http://blog.win-ing.cn by Katana\n ***/";
 	// 生成文件
 	foreach ($outs as $cat => &$out) {
-		$width = $out[IMG_WIDTH] + $out[IMG_RIGHT];
-		$height = $out[IMG_HEIGHT] + $out[IMG_BOTTOM];
+		if (!$SAME_POS){
+			$width = $out[IMG_WIDTH] + $out[IMG_RIGHT];
+			$height = $out[IMG_HEIGHT] + $out[IMG_BOTTOM];
+		}
 		if ($width <= 0 || $height <= 0) continue;
 
 		$path = $OUTPUT;
@@ -579,20 +611,36 @@ function run(){
 		gen_css('init', $opt);
 
 		foreach ($out[LIST_NORMAL] as $img) {
+			if ($SAME_POS && !sync_pos($img)){
+				echo "MISS DEFAULT POS: {$cat} - {$img['note']}\n";
+				continue;
+			}
 			gen_css($img);
 			merge_image($im, $img);
 		}
 		foreach ($out[LIST_RIGHT] as $img) {
 			$img['dx'] = $width - $img['dx'];
+			if ($SAME_POS && !sync_pos($img)){
+				echo "MISS DEFAULT POS: {$cat} - {$img['note']}\n";
+				continue;
+			}
 			gen_css($img);
 			merge_image($im, $img);
 		}
 		foreach ($out[LIST_BOTTOM] as $img) {
 			$img['dy'] = $height - $img['dy'];
+			if ($SAME_POS && !sync_pos($img)){
+				echo "MISS DEFAULT POS: {$cat} - {$img['note']}\n";
+				continue;
+			}
 			gen_css($img);
 			merge_image($im, $img);
 		}
 		foreach ($out[LIST_AUTO] as $img) {
+			if ($SAME_POS && !sync_pos($img)){
+				echo "MISS DEFAULT POS: {$cat} - {$img['note']}\n";
+				continue;
+			}
 			gen_css($img);
 			merge_image($im, $img);
 		}
