@@ -250,21 +250,53 @@ function gen_css($info, $opt = NULL){
 		}else {
 			$name = $id;
 		}
-		$code .= "\n.{$prefix}-{$name}{$less} {";
-		if ($url){
-			$code .= "background:url(\"{$url}\") no-repeat ";
-		}else {
-			$code .= "background-position:";
-		}
+		// 位置定位
 		$x = $info['dx'] > 0 ? "-{$info['dx']}px" : 0;
 		$y = $info['dy'] > 0 ? "-{$info['dy']}px" : 0;
-		$code .= "{$x} {$y};";
+		$pos = "{$x} {$y}";
+		// 大小高宽
+		$width = $height = false;
 		if ($size){
 			if (strpos($info['css'], 'w') === false){
-				$code .= " width:{$info['width']}px;";
+				$width = "{$info['width']}px";
 			}
 			if (strpos($info['css'], 'h') === false){
-				$code .= " height:{$info['height']}px;";
+				$height = "{$info['height']}px";
+			}
+		}
+
+		$code .= "\n.{$prefix}-{$name}";
+		if ($less){
+			$code .= "(";
+			if ($width) {
+				$code .= "@width: {$width}; ";
+			}
+			if ($height) {
+				$code .= "@height: {$height}; ";
+			}
+
+			if ($url){
+				$code .= "){ background:url(\"{$url}\") no-repeat {$pos};";
+			}else {
+				$code .= "){ background-position:{$pos};";
+			}
+			if ($width) {
+				$code .= " width:@width;";
+			}
+			if ($height) {
+				$code .= " height:@height;";
+			}
+		}else {
+			if ($url){
+				$code .= " {background:url(\"{$url}\") no-repeat {$pos};";
+			}else {
+				$code .= " {background-position: {$pos};";
+			}
+			if ($width) {
+				$code .= " width: {$width};";
+			}
+			if ($height) {
+				$code .= " height: {$height};";
 			}
 		}
 		$code .= '}';
