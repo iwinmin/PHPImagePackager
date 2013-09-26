@@ -11,6 +11,7 @@ define('LIST_BOTTOM', 6);
 define('LIST_AUTO', 7);
 define('IMG_TOP', 8);
 define('IMG_LEFT', 9);
+define('IMG_TIME', 10);
 define('FILE_PATTERN', '/^([rbgadtz])((?:,\d+){0,4})(\[[,\-\d]+\])?(\([^\)]+\))?(\{[^\}]+\})?$/i');
 define('LIST_FILE', 'list.txt');
 define('FAKE_FILE', '@null');
@@ -45,7 +46,8 @@ function scan_dir($dir, &$list){
 				'left' => 0,
 				'type' => $info[IMG_TYPE],
 				'name' => $ms,
-				'path' => $path
+				'path' => $path,
+				'time' => filemtime($path)
 			);
 		}
 	}
@@ -55,7 +57,6 @@ function scan_dir($dir, &$list){
 function to_real_path($path, $base){
 	if (empty($path)){ return NULL; }
 	if ($path == FAKE_FILE) return $path;
-
 	if ($path[0] != '/' && $path[0] != "\\" && $path[1] != ':'){
 		$path = $base . '/' . $path;
 	}
@@ -76,6 +77,7 @@ function parse_list($path, &$list){
 	$base  = dirname($path);
 	$zone_file = NULL;
 	$last  = NULL;
+	$ltime = filemtime($path);
 	foreach ($lines as $line){
 		$line = preg_split('/[ \t]+/', trim($line));
 		$name = array_shift($line);
@@ -125,11 +127,13 @@ function parse_list($path, &$list){
 			$info = array(
 				IMG_WIDTH => 0,
 				IMG_HEIGHT => 0,
-				IMG_TYPE => FAKE_FILE
+				IMG_TYPE => FAKE_FILE,
+				IMG_TIME => $ltime
 			);
 		}else {
 			if (!isset($cache[$path])){
 				$cache[$path] = getimagesize($path);
+				$cache[$path][IMG_TIME] = max($ltime, filemtime($path));
 			}
 			$info = $cache[$path];
 			if (!$info) continue;
@@ -144,7 +148,8 @@ function parse_list($path, &$list){
 			'left' => 0,
 			'type' => $info[IMG_TYPE],
 			'name' => $ms,
-			'path' => $path
+			'path' => $path,
+			'time' => $info[IMG_TIME]
 		);
 	}
 }
@@ -236,6 +241,7 @@ function gen_css($info, $opt = NULL){
 			$size = $opt['size'];
 			$less = (strtolower(substr($opt['output'], -5)) == '.less') ? '()':'';
 			$name = str_repeat('../', count($out)-1) . implode('/', $img);
+			if ($opt['mtime']) $name .= @date('?md', $opt['mtime']);
 			$url = $opt['url'] ? $name : false;
 			$code = "\n/* Image: {$name} */";
 			$code .= "\n.{$prefix}{$less} {background-image:url(\"{$name}\"); background-repeat: no-repeat;}";
@@ -395,7 +401,8 @@ function run(){
 	$CSS_FILE  = ''; // CSS导出文件地址
 	$CSS_SIZE  = true; // 导出图片的块大小CSS属性
 	$CSS_URL   = true; // 导出CSS包含URL地址
-	$SAME_POS  = false; // 相同名称的图片位置对应
+	$CSS_DATE  = true; // 导出CSS文件带日期参数清除缓存
+	$SAME_POS  = true; // 相同名称的图片位置对应
 	$GRID_PAD  = 0; // 自动排列时图片间隔
 	$GRID_BLK  = 0; // 自动排列最少块高宽
 	$LIST_FILE = LIST_FILE;
@@ -433,6 +440,9 @@ function run(){
 				break;
 			case 'CU':
 				$CSS_URL = ($param[1] == '1');
+				break;
+			case 'CD':
+				$CSS_DATE = ($param[1] == '1');
 				break;
 			case 'SP':
 				$SAME_POS = ($param[1] == '1');
@@ -484,12 +494,14 @@ function run(){
 	$empty = array(0, 0, 0, 0, array(), array(), array(), array(), 0, 0);
 	// 默认无后续名记录
 	$outs = array('' => $empty);
-
+	// 最后修改时间
+	$mtime = 0;
 	// 分析文件名参数
 	$len = count($list);
 	for ($i=0; $i<$len; $i++){
 		$img = &$list[$i];
 		$ms = $img['name'];
+		$mtime = max($mtime, $img['time']);
 
 		// 合并模式
 		// r - 靠右
@@ -638,7 +650,8 @@ function run(){
 			'url' => $CSS_URL,
 			'size' => $CSS_SIZE,
 			'path' => $path,
-			'output' => $CSS_FILE
+			'output' => $CSS_FILE,
+			'mtime' => $CSS_DATE ? $mtime : 0
 		);
 		gen_css('init', $opt);
 
