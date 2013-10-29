@@ -330,8 +330,8 @@ function calculate_auto(&$out, $GRID_PAD, $GRID_BLK){
 		}
 		$img['dx'] = $x;
 		$img['dy'] = $y;
-		$bw = $img['width'];
-		$bh = $img['height'];
+		$bw = $img['width'] + $img['right'];
+		$bh = $img['height'] + $img['bottom'];
 		if ($GRID_BLK){
 			if ($bw < $GRID_BLK) $bw = $GRID_BLK;
 			if ($bh < $GRID_BLK) $bh = $GRID_BLK;
@@ -543,7 +543,6 @@ function run(){
 					$img['width'] = max(0, intval($crop[0]));
 			}
 		}
-
 		$pos = explode(',', $ms[2]);
 		$out = &$outs[$cat];
 		$oh = $ow = $or = $ob = $rt = $bl = 0;
@@ -582,6 +581,8 @@ function run(){
 
 			case 'z':
 				$dx = $dy = 0;
+				$img['right'] = isset($pos[1]) ? intval($pos[1]) : 0;
+				$img['bottom'] = isset($pos[2]) ? intval($pos[2]) : 0;
 				$out[LIST_AUTO][] = &$img;
 			break;
 
