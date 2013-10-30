@@ -225,11 +225,12 @@ function parse_path($path){
 
 // 生成CSS代码
 function gen_css($info, $opt = NULL){
-	static $code='', $enable=false, $prefix, $size, $id, $less, $url;
+	static $code='', $enable=false, $prefix, $size, $id, $less, $url, $file, $last = '';
 	if ($info === 'init'){
-		$enable = !!$opt['output'];
+		$file = $opt['output'];
+		$enable = !!$file;
 		if ($enable){
-			$out = parse_path($opt['output']);
+			$out = parse_path($file);
 			$img = parse_path($opt['path']);
 			while ($out[0] == $img[0]){
 				array_shift($out);
@@ -239,7 +240,7 @@ function gen_css($info, $opt = NULL){
 			$id = 0;
 			$prefix = $opt['prefix'];
 			$size = $opt['size'];
-			$less = (strtolower(substr($opt['output'], -5)) == '.less') ? '()':'';
+			$less = (strtolower(substr($file, -5)) == '.less') ? '()':'';
 			$name = str_repeat('../', count($out)-1) . implode('/', $img);
 			if ($opt['mtime']) $name .= @date('?md', $opt['mtime']);
 			$url = $opt['url'] ? $name : false;
@@ -247,6 +248,10 @@ function gen_css($info, $opt = NULL){
 			$code .= "\n.{$prefix}{$less} {background-image:url(\"{$name}\"); background-repeat: no-repeat;}";
 		}
 	}elseif ($info === 'result'){
+		if ($less && $last != $file){
+			$last = $file;
+			$code = "\n.__iw(@w) when (@w > 0){ width:@w; }\n.__ih(@h) when (@h > 0){ height:@h; }" . $code;;
+		}
 		return $enable ? $code : '';
 	}elseif ($enable){
 		$id++;
@@ -257,11 +262,11 @@ function gen_css($info, $opt = NULL){
 			$name = $id;
 		}
 		// 位置定位
-		$x = $info['dx'] > 0 ? "-{$info['dx']}px" : 0;
-		$y = $info['dy'] > 0 ? "-{$info['dy']}px" : 0;
-		$pos = "{$x} {$y}";
+		$x = $info['dx'] > 0 ? "{$info['dx']}px" : 0;
+		$y = $info['dy'] > 0 ? "{$info['dy']}px" : 0;
+
 		// 大小高宽
-		$width = $height = false;
+		$width = $height = 0;
 		if ($size){
 			if (strpos($info['css'], 'w') === false){
 				$width = "{$info['width']}px";
@@ -274,25 +279,19 @@ function gen_css($info, $opt = NULL){
 		$code .= "\n.{$prefix}-{$name}";
 		if ($less){
 			$code .= "(";
-			if ($width) {
-				$code .= "@width: {$width}; ";
-			}
-			if ($height) {
-				$code .= "@height: {$height}; ";
-			}
+			$code .= "@w:{$width}, ";
+			$code .= "@h:{$height}, ";
+			$code .= "@x:0, @y:0){";
+			$pos = "(@x - {$x}) (@y - {$y})";
 
 			if ($url){
-				$code .= "){ background:url(\"{$url}\") no-repeat {$pos};";
+				$code .= "background:url(\"{$url}\") no-repeat {$pos};";
 			}else {
-				$code .= "){ background-position:{$pos};";
+				$code .= "background-position:{$pos};";
 			}
-			if ($width) {
-				$code .= " width:@width;";
-			}
-			if ($height) {
-				$code .= " height:@height;";
-			}
+			$code .= " .__iw(@w); .__ih(@h);";
 		}else {
+			$pos = "-{$x} -{$y}";
 			if ($url){
 				$code .= " {background:url(\"{$url}\") no-repeat {$pos};";
 			}else {
